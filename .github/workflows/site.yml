@@ -59,7 +59,10 @@ jobs:
           key: kova-data-${{ github.run_id }}
 
       - name: Build the site
-        run: python -m kova build-site --out _site
+        run: |
+          python -m kova build-site --out _site
+          { python -m kova status; echo; python -m kova verify || true; } > _site/app/data/status.txt
+          cat _site/app/data/status.txt
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
