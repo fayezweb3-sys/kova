@@ -10,6 +10,7 @@
   python -m kova verify                check derived Ontario fields against the e-Formulary
   python -m kova status                what's loaded and when
   python -m kova sample                load built-in sample data into data/sample.sqlite (for trying the app)
+  python -m kova build-site            static website in _site/ (home page + app), for free hosting
 """
 
 from __future__ import annotations
@@ -193,6 +194,18 @@ def cmd_sample(args):
           "Ontario carbamazepine listings are real (28 Oct 2026); BC coverage, shortage reports and recalls are invented.")
 
 
+def cmd_build_site(args):
+    from . import site
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    home = Path(args.home) if args.home else Path("website/index.html")
+    if home.exists():
+        (out / "index.html").write_text(home.read_text())
+    r = site.build(_conn(args), out / "app")
+    print(f"Site built in {out}: home page {'copied' if home.exists() else 'missing'}; app at {out / 'app'} "
+          f"({r['products']} products, {r['shards']} files, {r['megabytes']} MB)")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="kova", description="Drug supply and coverage for Ontario and BC.")
     ap.add_argument("--db", help="database file (default data/kova.sqlite)")
@@ -214,10 +227,13 @@ def main(argv=None):
     p.add_argument("file", nargs="?", help="CSV or text file of DINs, or the DINs themselves")
     p.add_argument("--email")
     p.add_argument("--webhook")
+    p = sub.add_parser("build-site", help="static website for free hosting")
+    p.add_argument("--out", default="_site")
+    p.add_argument("--home", help="marketing page to use as the site's home (default website/index.html)")
     for name in ("verify", "status", "sample"):
         sub.add_parser(name)
     args = ap.parse_args(argv)
-    globals()[f"cmd_{args.cmd}"](args)
+    globals()[f"cmd_{args.cmd.replace('-', '_')}"](args)
 
 
 if __name__ == "__main__":

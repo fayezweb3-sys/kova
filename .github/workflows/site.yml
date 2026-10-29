@@ -1,0 +1,77 @@
+# Refreshes Kova's data every night and publishes the website on GitHub Pages.
+# One-time setup in the repository: Settings → Pages → Source: "GitHub Actions".
+# Optional secrets (Settings → Secrets and variables → Actions) for shortage reports:
+#   KOVA_HPSC_EMAIL, KOVA_HPSC_PASSWORD  (free account at healthproductshortages.ca)
+name: Refresh data and publish site
+
+on:
+  schedule:
+    - cron: "17 8 * * *"        # 04:17 Toronto time (EDT), every day
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install .
+
+      # Yesterday's database, so tonight's load can be compared with it (that's what change alerts are)
+      - name: Restore previous data
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: kova-data-${{ github.run_id }}
+          restore-keys: kova-data-
+
+      - name: Download and load the five sources
+        env:
+          KOVA_HPSC_EMAIL: ${{ secrets.KOVA_HPSC_EMAIL }}
+          KOVA_HPSC_PASSWORD: ${{ secrets.KOVA_HPSC_PASSWORD }}
+        run: |
+          python -m kova refresh
+          python -m kova status
+          python -m kova verify || echo "::warning::Ontario rule check found differences; see the log above"
+
+      - name: Save data for tomorrow
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: kova-data-${{ github.run_id }}
+
+      - name: Build the site
+        run: python -m kova build-site --out _site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -116,11 +116,13 @@ footer { color: var(--faint); font-size: 0.8rem; padding: 0 0 40px; }
 </div></header>
 <div class="banner" id="banner" hidden><div class="wrap"></div></div>
 <main><div class="wrap" id="view"></div></main>
+<!--STATIC-->
 <footer><div class="wrap">Kova uses official public data and shows each source's date. It supports professional judgement and doesn't replace it; the official formularies govern coverage.</div></footer>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const KEY = (() => { try { return localStorage.getItem("kova-key") || ""; } catch { return ""; } })();
 async function api(path, opts = {}) {
+  if (window.KOVA_STATIC) return staticApi(path, opts);
   const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(KEY ? { "X-API-Key": KEY } : {}), ...(opts.headers || {}) } });
   if (r.status === 204) return null;
   const body = await r.json().catch(() => ({}));
@@ -150,6 +152,94 @@ function chipsFor(x) {
     x.recalls ? pill("warn", `${x.recalls} recall${x.recalls > 1 ? "s" : ""}`) : null,
   ];
 }
+
+// ---------- static mode: the same pages, served from prebuilt JSON (no server) ----------
+const cache = {};
+const getJSON = (url) => cache[url] || (cache[url] = fetch(url).then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); }));
+const ON_NAME = { 1: "benefit", 2: "temporary benefit", 3: "not a benefit" };
+const store = {
+  load() { try { return JSON.parse(localStorage.getItem("kova-watchlists") || "[]"); } catch { return []; } },
+  save(v) { try { localStorage.setItem("kova-watchlists", JSON.stringify(v)); } catch {} },
+};
+async function shardEntry(din) {
+  const d = String(din).replace(/\D/g, "").padStart(8, "0");
+  const shard = await getJSON(`data/p/${d.slice(0, 5)}.json`).catch(() => ({}));
+  return [d, shard[d]];
+}
+function fillProduct(p, meta) {
+  p.shortages = p.shortages || []; p.recalls = p.recalls || []; p.ingredients = p.ingredients || [];
+  p.ontario = p.ontario || null; p.bc = p.bc || null; p.health_canada = p.health_canada || null;
+  if (p.bc) p.bc.plans = p.bc.plans || [];
+  p.summary = Object.assign({ marketed: null, open_shortage: false, tier_3: false, recalls: 0, ontario: null, bc: null }, p.summary || {});
+  p.sources = {};
+  for (const [k, v] of Object.entries(meta.sources || {})) p.sources[k] = { name: v.name, checked: v.run_at, version: v.version };
+  return p;
+}
+function fillAlt(a, din, prov) {
+  a = a || { province: prov, din, listed: false };
+  for (const k of ["alternatives", "related", "not_covered"]) a[k] = (a[k] || []).map((i) => Object.assign({ shortage: [], open_shortage: false, available: true }, i));
+  return a;
+}
+async function statusRow(din) {
+  const [d, e] = await shardEntry(din);
+  if (!e) return { din: d, found: false };
+  const p = e.product;
+  return Object.assign({ din: d, name: p.name, strength: p.strength, dosage_form: p.dosage_form, company: p.company, found: true }, fillProduct(p, {}).summary);
+}
+async function staticApi(path, opts) {
+  const url = new URL(path, location.href), seg = url.pathname.split("/").filter(Boolean);
+  const meta = await getJSON("data/meta.json");
+  const method = (opts.method || "GET").toUpperCase();
+  if (seg[0] === "health") return { ok: true, products: meta.products, sources: meta.sources };
+  if (seg[1] === "sources") return Object.entries(meta.sources).map(([id, v]) => ({ id, ...v }));
+  if (seg[1] === "search") {
+    const idx = await getJSON("data/search.json");
+    const words = (url.searchParams.get("q") || "").toUpperCase().split(/\s+/).filter(Boolean);
+    const digits = words.join("");
+    let rows;
+    if (/^\d{5,8}$/.test(digits)) rows = idx.filter((r) => r[0].includes(digits.length === 8 ? digits : digits));
+    else {
+      const strength = words.find((w) => /^\d+(\.\d+)?(MG|MCG|G|ML)?$/.test(w));
+      const terms = words.filter((w) => w !== strength && !/^(MG|MCG|G|ML)$/.test(w));
+      const num = strength ? strength.match(/^\d+(\.\d+)?/)[0] : null;
+      const re = num ? new RegExp(`(^|[^\\d.])${num.replace(".", "\\.")}([^\\d.]|$)`) : null;
+      rows = idx.filter((r) => { const hay = `${r[1]} ${r[5]}`.toUpperCase(); return terms.every((t) => hay.includes(t)) && (!re || re.test(`${r[2]} ${r[1]}`)); });
+      rows.sort((a, b) => (b[6] === 1) - (a[6] === 1) || (b[8] > 0) - (a[8] > 0) || a[1].localeCompare(b[1]));
+    }
+    const limit = +url.searchParams.get("limit") || 25;
+    return rows.slice(0, limit).map((r) => ({ din: r[0], name: r[1], strength: r[2], dosage_form: r[3], company: r[4],
+      marketed: r[6] == null ? null : !!r[6], open_shortage: r[7] > 0, tier_3: r[7] > 1, ontario: ON_NAME[r[8]] || null, ontario_price: r[9], bc: r[10] ? "covered" : null }));
+  }
+  if (seg[1] === "products") {
+    const [, e] = await shardEntry(seg[2]);
+    if (!e) throw new Error("No product with that DIN or PIN in any source");
+    return fillProduct(e.product, meta);
+  }
+  if (seg[1] === "alternatives") {
+    const prov = seg[2].toUpperCase(), [d, e] = await shardEntry(seg[3]);
+    return fillAlt(e && e.alt && e.alt[prov], d, prov);
+  }
+  if (seg[1] === "events") return getJSON("data/changes.json");
+  if (seg[1] === "watchlists") {
+    let lists = store.load();
+    const id = seg[2] ? +seg[2] : null;
+    if (!id && method === "POST") {
+      const body = JSON.parse(opts.body || "{}");
+      const dins = [...new Set(((body.text || "").match(/(?<!\d)\d{6,8}(?!\d)/g) || []).map((x) => x.padStart(8, "0")))];
+      if (!dins.length) throw new Error("No DINs found");
+      const w = { id: Date.now(), name: body.name || "Watchlist", dins, created: new Date().toISOString(), kinds: [] };
+      lists.push(w); store.save(lists); return w;
+    }
+    if (!id) return lists;
+    const w = lists.find((x) => x.id === id);
+    if (!w) throw new Error("No such watchlist");
+    if (method === "DELETE") { store.save(lists.filter((x) => x.id !== id)); return null; }
+    if (seg[3] === "events") return (await getJSON("data/changes.json")).filter((e) => w.dins.includes(e.din)).sort((a, b) => a.id - b.id);
+    return { ...w, products: await Promise.all(w.dins.map(statusRow)) };
+  }
+  throw new Error("Not available on this site");
+}
+
 const view = $("#view");
 function setNav(name) { document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === name)); }
 function errorBox(e) { return h("div", { class: "card empty" }, String(e.message || e)); }
@@ -288,7 +378,7 @@ async function pageWatch() {
   view.replaceChildren(h("div", { class: "fade" },
     h("h1", {}, "Watchlists"), h("p", { class: "muted", style: "margin:6px 0 18px" }, "Kova alerts you when a product on a list gets a shortage report, a recall, a coverage change, a new generic or a status change."),
     h("div", { class: "grid2" },
-      h("div", { class: "card pad stack" }, h("h2", {}, "New watchlist"), h("label", { class: "f" }, "Name", name), h("label", { class: "f" }, "Email for alerts (optional)", email), h("label", { class: "f" }, "Products", text),
+      h("div", { class: "card pad stack" }, h("h2", {}, "New watchlist"), h("label", { class: "f" }, "Name", name), window.KOVA_STATIC ? h("p", { class: "faint" }, "Watchlists are saved in this browser. Changes to your products show here and on the Changes page after each nightly update.") : h("label", { class: "f" }, "Email for alerts (optional)", email), h("label", { class: "f" }, "Products", text),
         h("div", {}, h("button", { class: "btn", onclick: create }, "Create watchlist")), msg),
       listBox)));
   refresh();
@@ -312,7 +402,7 @@ async function pageData() {
   setNav("data");
   try {
     const src = await api("/v1/sources");
-    view.replaceChildren(h("div", { class: "fade" }, h("h1", {}, "Data sources"), h("p", { class: "muted", style: "margin:6px 0 18px" }, "When each source was last loaded. Run python -m kova refresh to update."),
+    view.replaceChildren(h("div", { class: "fade" }, h("h1", {}, "Data sources"), h("p", { class: "muted", style: "margin:6px 0 18px" }, window.KOVA_STATIC ? "When each source was last loaded. Kova refreshes every night." : "When each source was last loaded. Run python -m kova refresh to update."),
       h("div", { class: "card tw" }, h("table", {}, h("thead", {}, h("tr", {}, ["Source", "Loaded", "Rows", "Source version"].map((t) => h("th", {}, t)))),
         h("tbody", {}, src.map((x) => h("tr", {}, h("td", {}, x.name), h("td", {}, x.run_at ? day(x.run_at) : pill("warn", "Not loaded")), h("td", {}, x.rows ?? "–"), h("td", {}, x.version || "–"))))))));
   } catch (e) { view.replaceChildren(errorBox(e)); }
@@ -330,7 +420,7 @@ function route() {
 }
 addEventListener("hashchange", () => { route(); scrollTo(0, 0); });
 api("/health").then((x) => {
-  const sample = Object.values(x.sources || {}).some((s) => /sample/.test(s.origin || ""));
+  const sample = Object.values(x.sources || {}).some((s) => s.sample || /sample/.test(s.origin || ""));
   const none = !Object.keys(x.sources || {}).length;
   if (sample || none) {
     $("#banner").hidden = false;

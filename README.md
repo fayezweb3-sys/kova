@@ -7,7 +7,20 @@ Drug supply and coverage for Ontario and BC pharmacies. Kova joins five official
 - **What can I give instead?** Interchangeable, covered products with no open shortage report, cheapest first. Temporary listings and other release forms are shown separately, never as straight swaps.
 - **What changed?** Every refresh is compared with the last one. Watchlists get email or webhook alerts for shortages, recalls, coverage changes, new generics and status changes.
 
-## Run it on your Mac
+## The website
+
+Kova runs as a static website on GitHub Pages: no server, no hosting bill. Every night a GitHub Actions workflow
+(`.github/workflows/site.yml`) downloads all five sources, compares them with the night before, and rebuilds the site:
+
+- `/` is the Kova home page (`website/index.html`)
+- `/app/` is the drug search: product pages, Ontario and BC alternatives, watchlists (saved in the browser) and recent changes
+- `/app/data/` holds the JSON the app reads, which doubles as a read-only API
+
+One-time setup: push this folder to a GitHub repository, then Settings → Pages → Source: **GitHub Actions**, then
+Actions → "Refresh data and publish site" → Run workflow. For shortage reports, add the secrets `KOVA_HPSC_EMAIL` and
+`KOVA_HPSC_PASSWORD` (Settings → Secrets and variables → Actions).
+
+## Run it locally (optional)
 
 ```bash
 cd kova-app
