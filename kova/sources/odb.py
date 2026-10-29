@@ -10,13 +10,14 @@ Structure (from the published extract):
             <pcgGroup lccId?>                one coverage group; lccNote = Limited Use notes
               <lccNote seq reasonForUseId type>text</lccNote>
               <pcg9 id><itemNumber/><strength/><dosageForm/><dailyCost/>?
-                <drug id notABenefit? sec3? sec3b? sec3bEAP? sec12? dinStatus?>
+                <drug id notABenefit? sec3? sec3b? sec3bEAP? sec3c? sec9? sec12? dinStatus? chronicUseMed? ...>
                   <name/><manufacturerId/><individualPrice/><dailyCost/>?<listingDate/><amountMOHLTCPays/>?
 
 Derived fields, and the rule behind each (checked against the e-Formulary by `kova verify`):
   interchangeable  the drug shares its pcg9 group with at least one other listed product
   limited_use      its pcgGroup carries a Limited Use note (lccNote with reasonForUseId)
-  temporary        "temporary benefit" appears in its name or note
+  temporary        sec3c="Y" on the drug (30 listings in the Oct 2026 extract, 29 of them PINs); a name or
+                   note saying "temporary benefit" also counts
   benefit          no notABenefit attribute
 """
 
@@ -32,7 +33,8 @@ from .. import normalize as N
 
 PAGE_URL = "https://www.ontario.ca/document/ontario-drug-benefit-odb-formulary-comparative-drug-index-cdi-and-monthly-formulary-0"
 LINK_PATTERN = re.compile(r'href="([^"]*formulary[^"]*data-extract[^"]*\.xml)"', re.I)
-FLAG_ATTRS = ("sec3", "sec3b", "sec3bEAP", "sec12", "dinStatus")
+FLAG_ATTRS = ("sec3", "sec3b", "sec3bEAP", "sec3c", "sec9", "sec12", "dinStatus", "chronicUseMed", "insOH",
+              "selfMed", "maO", "additionalBenefitType")
 _TEMP = re.compile(r"temporary\s+benefit", re.I)
 _NAME_SUFFIX = re.compile(r"\s*\((?:not a benefit|temporary benefit)\)\s*$", re.I)
 
@@ -79,7 +81,7 @@ def parse(path: Path) -> tuple[list[dict], dict]:
                             benefit=0 if d.get("notABenefit") else 1,
                             interchangeable=int(len(listed) > 1),
                             limited_use=int(bool(lu)), lu_codes=",".join(sorted(set(lu))) or None,
-                            temporary=int(bool(_TEMP.search(name) or _TEMP.search(note))),
+                            temporary=int(d.get("sec3c") == "Y" or bool(_TEMP.search(name) or _TEMP.search(note))),
                             flags=",".join(f"{a}={d.get(a)}" for a in FLAG_ATTRS if d.get(a)) or None,
                             therapeutic_class=klass, formulary_date=meta["formularyDate"],
                         ))

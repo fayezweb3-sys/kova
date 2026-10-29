@@ -83,6 +83,7 @@ Alert email uses SMTP when `KOVA_SMTP_HOST` (and `KOVA_SMTP_PORT`, `KOVA_SMTP_US
 
 - **Ontario interchangeability:** a product is treated as interchangeable when its ODB group (pcg9) holds more than one listed product. This matches the e-Formulary for every carbamazepine listing checked on 28 Oct 2026. `kova verify` re-checks it on each new extract; if it reports differences, the rule needs work before pharmacies rely on it.
 - **BC alternatives** use the LCA category when a product has one, otherwise Health Canada's same ingredients, strength, form and route.
+- **Ontario temporary benefits** are the listings marked `sec3c="Y"` in the extract (usually PINs for products brought in during a shortage).
 - **Recalls** are linked to a DIN when the notice prints it; matches by product name are labelled as such.
 
 ## Not built yet

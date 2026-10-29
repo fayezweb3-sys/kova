@@ -62,7 +62,6 @@ jobs:
         run: |
           python -m kova build-site --out _site
           { python -m kova status; echo; python -m kova verify || true; } > _site/app/data/status.txt
-          python odb_debug.py 09858341 > _site/app/data/odb-debug.txt 2>&1 || true
           cat _site/app/data/status.txt
 
       - uses: actions/configure-pages@v5

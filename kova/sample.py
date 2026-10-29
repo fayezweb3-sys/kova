@@ -80,8 +80,8 @@ ODB_GROUPS = {
                                             ("00369810", "Tegretol (Not a Benefit)", "NOV", None, True)]),
     "G-CH200": ("200mg", "Chew Tab", False, [("02244404", "Taro-Carbamazepine", "TAR", "0.3302", False),
                                             ("00665088", "Tegretol (Not a Benefit)", "NOV", None, True)]),
-    "G-ER200": ("200mg", "ER Tab", False, [("09858341", "Carbamazepine ER Tablets, USP (Temporary Benefit)", "SET", "4.7080", False)]),
-    "G-ER400": ("400mg", "ER Tab", False, [("09858342", "Carbamazepine ER Tablets, USP (Temporary Benefit)", "SET", "5.2216", False)]),
+    "G-ER200": ("200mg", "ER Tab", False, [("09858341", "Carbamazepine ER Tablets, USP", "SET", "4.7080", False)]),   # marked sec3c="Y", as in the real extract
+    "G-ER400": ("400mg", "ER Tab", False, [("09858342", "Carbamazepine ER Tablets, USP", "SET", "5.2216", False)]),
     "G-LA200": ("200mg", "LA Tab", True, [("02261839", "Sandoz Carbamazepine CR", "SDZ", "0.3845", False),
                                          ("00773611", "Tegretol CR", "NOV", "0.6161", False)]),
     "G-LA400": ("400mg", "LA Tab", True, [("02261847", "Sandoz Carbamazepine CR", "SDZ", "0.7689", False),
@@ -109,7 +109,7 @@ def write_odb(path: Path, groups: dict | None = None, formulary_date: str = "202
             out.append('<lccNote seq="1" reasonForUseId="999" type="L">For patients who have tried an immediate-release product.</lccNote>')
         out.append(f'<pcg9 id="{gid}"><itemNumber>1</itemNumber><strength>{strength}</strength><dosageForm>{form}</dosageForm>')
         for din, name, mid, price, nab in drugs:
-            attrs = f' id="{din}"' + (' notABenefit="Y"' if nab else "")
+            attrs = f' id="{din}"' + (' notABenefit="Y"' if nab else "") + (' sec3c="Y"' if din.startswith("0985") else "")
             body = f"<name>{name.replace('&', '&amp;')}</name><manufacturerId>{mid}</manufacturerId>"
             if price:
                 body += f"<individualPrice>{price}</individualPrice>"
