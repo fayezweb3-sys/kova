@@ -69,9 +69,13 @@ def parse(path: Path) -> tuple[list[dict], dict]:
                         mid = _text(d, "manufacturerId")
                         price = N.money(_text(d, "individualPrice"))
                         pays = N.money(_text(d, "amountMOHLTCPays"))
+                        strength = _text(pcg9, "strength")
+                        clean = _NAME_SUFFIX.sub("", name)
+                        if strength:   # some names repeat the strength ("... USP 200mg"); the page shows it separately
+                            clean = re.sub(r"\s+" + re.escape(strength) + r"\s*$", "", clean, flags=re.I) or clean
                         rows.append(dict(
                             din=N.din(d.get("id")), is_pin=int(N.din(d.get("id")).startswith("09")),
-                            name=_NAME_SUFFIX.sub("", name), generic_name=gname, generic_id=gid,
+                            name=clean, generic_name=gname, generic_id=gid,
                             strength=_text(pcg9, "strength"), dosage_form=_text(pcg9, "dosageForm"),
                             group_id=pcg9.get("id"), group_size=len(listed),
                             manufacturer_id=mid, manufacturer=makers.get(mid, mid),
